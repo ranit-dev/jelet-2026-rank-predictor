@@ -1,0 +1,901 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JELET 2026 · Rank Predictor</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+/* ── Design tokens ─────────────────────────────────────────────── */
+:root {
+  --bg:        #f5f7fa;
+  --surface:   #ffffff;
+  --border:    #e8edf4;
+  --text:      #0d1117;
+  --muted:     #6b7786;
+  --subtle:    #9ca9b8;
+  --accent:    #4f46e5;
+  --accent-2:  #6366f1;
+  --accent-bg: rgba(79,70,229,.07);
+  --accent-bd: rgba(79,70,229,.22);
+  --green:     #059669;
+  --green-bg:  rgba(5,150,105,.08);
+  --amber:     #d97706;
+  --amber-bg:  rgba(217,119,6,.08);
+  --red:       #dc2626;
+  --red-bg:    rgba(220,38,38,.08);
+  --shadow-sm: 0 1px 3px rgba(13,17,23,.06), 0 1px 2px rgba(13,17,23,.04);
+  --shadow:    0 4px 16px rgba(13,17,23,.06), 0 1px 4px rgba(13,17,23,.04);
+  --shadow-lg: 0 8px 32px rgba(13,17,23,.08), 0 2px 8px rgba(13,17,23,.04);
+  --radius:    14px;
+  --radius-sm: 8px;
+  --radius-xs: 6px;
+  --transition: .18s cubic-bezier(.2,.8,.2,1);
+}
+
+[data-theme="dark"] {
+  --bg:        #0c0e13;
+  --surface:   #161b25;
+  --border:    #242d3d;
+  --text:      #e8edf4;
+  --muted:     #8896aa;
+  --subtle:    #4e5d71;
+  --accent:    #818cf8;
+  --accent-2:  #a5b4fc;
+  --accent-bg: rgba(129,140,248,.1);
+  --accent-bd: rgba(129,140,248,.25);
+  --green:     #34d399;
+  --green-bg:  rgba(52,211,153,.1);
+  --amber:     #fbbf24;
+  --amber-bg:  rgba(251,191,36,.1);
+  --red:       #f87171;
+  --red-bg:    rgba(248,113,113,.1);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,.3);
+  --shadow:    0 4px 16px rgba(0,0,0,.3);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,.4);
+}
+
+/* ── Reset & base ──────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 16px; -webkit-text-size-adjust: 100%; }
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  -webkit-font-smoothing: antialiased;
+  transition: background var(--transition), color var(--transition);
+}
+a { color: inherit; text-decoration: none; }
+button { cursor: pointer; font-family: inherit; border: none; background: none; }
+input { font-family: inherit; }
+
+/* ── Scrollbar ─────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+
+/* ── Nav ───────────────────────────────────────────────────────── */
+.nav {
+  position: sticky; top: 0; z-index: 100;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.nav-inner {
+  max-width: 1120px; margin: 0 auto;
+  padding: 0 24px;
+  height: 60px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.nav-logo {
+  display: flex; align-items: center; gap: 10px;
+}
+.nav-logo-badge {
+  width: 34px; height: 34px; border-radius: 9px;
+  background: var(--accent);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.nav-logo-badge svg { width: 18px; height: 18px; stroke: #fff; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.nav-title { font-size: .95rem; font-weight: 700; letter-spacing: -.02em; }
+.nav-sub { font-size: .75rem; color: var(--muted); font-weight: 500; }
+.nav-right { display: flex; align-items: center; gap: 10px; }
+.badge-pill {
+  font-size: .72rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+  background: var(--accent-bg); color: var(--accent);
+  border: 1px solid var(--accent-bd);
+  padding: 3px 10px; border-radius: 99px;
+}
+.theme-btn {
+  width: 36px; height: 36px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg); border: 1px solid var(--border);
+  color: var(--muted); transition: all var(--transition);
+}
+.theme-btn:hover { color: var(--text); border-color: var(--muted); }
+.theme-btn svg { width: 16px; height: 16px; }
+.icon-moon { display: block; }
+.icon-sun  { display: none; }
+[data-theme="dark"] .icon-moon { display: none; }
+[data-theme="dark"] .icon-sun  { display: block; }
+
+/* ── Main layout ───────────────────────────────────────────────── */
+main { flex: 1; max-width: 1120px; margin: 0 auto; padding: 40px 24px; width: 100%; }
+.page-header { margin-bottom: 36px; }
+.page-eyebrow {
+  font-size: .72rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--accent); margin-bottom: 8px;
+}
+.page-title {
+  font-size: clamp(1.6rem, 4vw, 2.2rem);
+  font-weight: 800; letter-spacing: -.03em; line-height: 1.15;
+}
+.page-title span { color: var(--accent); }
+.page-desc { margin-top: 8px; color: var(--muted); font-size: .9rem; max-width: 540px; }
+
+.grid { display: grid; grid-template-columns: 420px 1fr; gap: 24px; align-items: start; }
+@media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+
+/* ── Cards ─────────────────────────────────────────────────────── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow var(--transition), border-color var(--transition);
+}
+.card:hover { box-shadow: var(--shadow); }
+.card-p { padding: 24px; }
+.card-head {
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+.card-head-title { font-size: .95rem; font-weight: 700; letter-spacing: -.01em; }
+.card-head-sub { font-size: .78rem; color: var(--muted); margin-top: 2px; }
+
+/* ── Input section ─────────────────────────────────────────────── */
+.input-label {
+  font-size: .8rem; font-weight: 600; letter-spacing: .02em;
+  color: var(--muted); text-transform: uppercase; margin-bottom: 10px; display: block;
+}
+.input-row { display: flex; gap: 10px; }
+.marks-input {
+  flex: 1; height: 50px; padding: 0 16px;
+  font-size: 1.05rem; font-weight: 500;
+  background: var(--bg); color: var(--text);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm); outline: none;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+.marks-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+.marks-input::placeholder { color: var(--subtle); }
+.calc-btn {
+  height: 50px; padding: 0 22px;
+  background: var(--accent); color: #fff;
+  font-size: .88rem; font-weight: 600;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition);
+  white-space: nowrap; flex-shrink: 0;
+}
+.calc-btn:hover { background: var(--accent-2); box-shadow: 0 4px 12px rgba(79,70,229,.3); transform: translateY(-1px); }
+.calc-btn:active { transform: translateY(0); box-shadow: none; }
+.input-hint { margin-top: 8px; font-size: .76rem; color: var(--subtle); }
+
+/* ── Result ────────────────────────────────────────────────────── */
+.result-card { margin-top: 16px; display: none; }
+.result-card.visible { display: block; animation: fadeUp .3s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+.rank-block { text-align: center; padding: 28px 24px 20px; }
+.rank-eyebrow { font-size: .72rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+.rank-number {
+  font-size: 5rem; font-weight: 900; letter-spacing: -.05em;
+  line-height: 1; color: var(--accent);
+  transition: color var(--transition);
+}
+.rank-range { font-size: .82rem; color: var(--muted); margin-top: 8px; }
+.rank-range strong { color: var(--text); font-weight: 600; }
+
+.result-divider { height: 1px; background: var(--border); margin: 0 24px; }
+
+.result-meta { padding: 16px 24px; display: flex; align-items: center; gap: 12px; justify-content: space-between; }
+.confidence-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: .75rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  padding: 5px 12px; border-radius: 99px; border: 1.5px solid transparent;
+}
+.conf-high   { background: var(--green-bg); color: var(--green); border-color: rgba(5,150,105,.2); }
+.conf-medium { background: var(--amber-bg); color: var(--amber); border-color: rgba(217,119,6,.2); }
+.conf-low    { background: var(--red-bg);   color: var(--red);   border-color: rgba(220,38,38,.2); }
+.conf-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.result-marks-tag { font-size: .78rem; color: var(--muted); font-weight: 500; }
+.result-marks-tag strong { color: var(--text); }
+
+/* ── Chart ─────────────────────────────────────────────────────── */
+.chart-block { padding: 0 24px 24px; }
+.chart-label { font-size: .72rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: 14px; }
+.chart-wrap { position: relative; height: 180px; }
+
+/* ── Colleges ──────────────────────────────────────────────────── */
+.colleges-card { display: none; }
+.colleges-card.visible { display: flex; flex-direction: column; animation: fadeUp .35s .05s cubic-bezier(.2,.8,.2,1) both; }
+.colleges-list {
+  padding: 12px;
+  overflow-y: auto;
+  max-height: 580px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.college-item {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+  transition: all var(--transition);
+}
+.college-item:hover { border-color: var(--accent-bd); background: var(--surface); transform: translateX(2px); }
+.college-name { font-size: .85rem; font-weight: 600; line-height: 1.3; }
+.college-branch { font-size: .76rem; color: var(--muted); margin-top: 3px; }
+.college-right { flex-shrink: 0; text-align: right; }
+.cutoff-label { font-size: .65rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--subtle); margin-bottom: 4px; }
+.cutoff-val { font-size: .95rem; font-weight: 800; color: var(--text); }
+.chance-chip {
+  display: inline-block; font-size: .65rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  padding: 2px 8px; border-radius: 4px; margin-top: 6px;
+}
+.chance-safe     { background: var(--green-bg); color: var(--green); }
+.chance-likely   { background: var(--accent-bg); color: var(--accent); }
+.chance-border   { background: var(--amber-bg); color: var(--amber); }
+.colleges-empty {
+  text-align: center; padding: 48px 24px;
+  color: var(--muted); font-size: .88rem;
+}
+.colleges-empty strong { display: block; color: var(--text); font-size: .95rem; margin-bottom: 4px; }
+
+/* ── Empty state ────────────────────────────────────────────────── */
+.empty-state {
+  min-height: 380px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  text-align: center; padding: 48px 32px;
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  color: var(--muted);
+  background: var(--surface);
+  transition: all var(--transition);
+}
+.empty-state.hidden { display: none; }
+.empty-icon {
+  width: 52px; height: 52px; border-radius: 14px;
+  background: var(--bg); border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center; margin-bottom: 16px;
+}
+.empty-icon svg { width: 22px; height: 22px; stroke: var(--subtle); fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.empty-title { font-size: .95rem; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+.empty-sub { font-size: .82rem; max-width: 280px; }
+
+/* ── Reference table ───────────────────────────────────────────── */
+.ref-section { margin-top: 32px; }
+.ref-title { font-size: .8rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-bottom: 12px; }
+.ref-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+.ref-table th {
+  text-align: left; padding: 8px 12px;
+  font-size: .7rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--subtle); border-bottom: 1px solid var(--border);
+}
+.ref-table td {
+  padding: 9px 12px; border-bottom: 1px solid var(--border);
+  transition: background var(--transition);
+}
+.ref-table tr:last-child td { border-bottom: none; }
+.ref-table tr:hover td { background: var(--accent-bg); }
+.ref-marks { font-weight: 600; color: var(--text); }
+.ref-rank   { color: var(--muted); }
+.ref-type-known { color: var(--green); font-weight: 600; font-size: .7rem; }
+.ref-type-est   { color: var(--amber); font-weight: 600; font-size: .7rem; }
+
+/* ── Footer ─────────────────────────────────────────────────────── */
+footer {
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  padding: 20px 24px;
+}
+.footer-inner {
+  max-width: 1120px; margin: 0 auto;
+  display: flex; flex-direction: column; gap: 10px;
+}
+@media (min-width: 768px) { .footer-inner { flex-direction: row; align-items: center; justify-content: space-between; } }
+.disclaimer {
+  font-size: .76rem; color: var(--muted); line-height: 1.6; max-width: 700px;
+}
+.disclaimer strong { color: var(--text); }
+.copyright { font-size: .72rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--subtle); white-space: nowrap; }
+
+/* ── Animations ─────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: 0ms !important; animation-duration: 0ms !important; } }
+</style>
+</head>
+<body>
+
+<!-- ── NAV ─────────────────────────────────────────────────────── -->
+<nav class="nav">
+  <div class="nav-inner">
+    <div class="nav-logo">
+      <div class="nav-logo-badge">
+        <svg viewBox="0 0 24 24"><path d="M3 3h18M3 9h18M3 15h12M3 21h8"/><circle cx="19" cy="18" r="3"/><path d="M19 16v2l1 1"/></svg>
+      </div>
+      <div>
+        <div class="nav-title">JELET Predictor</div>
+        <div class="nav-sub">West Bengal · 2026</div>
+      </div>
+    </div>
+    <div class="nav-right">
+      <span class="badge-pill">Live 2026</span>
+      <button class="theme-btn" onclick="toggleTheme()" title="Toggle dark mode" aria-label="Toggle dark mode">
+        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+      </button>
+    </div>
+  </div>
+</nav>
+
+<!-- ── MAIN ─────────────────────────────────────────────────────── -->
+<main>
+  <header class="page-header">
+    <div class="page-eyebrow">JELET 2026 · Open Category · Round 1</div>
+    <h1 class="page-title">Rank &amp; College <span>Predictor</span></h1>
+    <p class="page-desc">Enter your expected marks for an instant GMR rank estimate. Calibrated using fresh 2025 anchor data with smooth decimal interpolation.</p>
+  </header>
+
+  <div class="grid">
+    <!-- LEFT COLUMN -->
+    <div>
+      <!-- Input card -->
+      <div class="card card-p">
+        <label class="input-label" for="marks">Your Expected Marks <span style="color:var(--subtle);font-weight:400">(out of 120)</span></label>
+        <div class="input-row">
+          <input type="number" id="marks" class="marks-input" placeholder="e.g. 29.3750" min="0" max="120" step="0.0001">
+          <button class="calc-btn" onclick="predict()">Predict Rank</button>
+        </div>
+        <p class="input-hint">Supports up to 4 decimal places · e.g. 31.8125, 40.1250</p>
+      </div>
+
+      <!-- Result card -->
+      <div class="card result-card" id="result-card">
+        <div class="rank-block">
+          <div class="rank-eyebrow">Estimated GMR Rank</div>
+          <div class="rank-number" id="rank-number">—</div>
+          <div class="rank-range" id="rank-range"></div>
+        </div>
+
+        <div class="result-divider"></div>
+
+        <div class="result-meta">
+          <span class="confidence-badge" id="confidence-badge">
+            <span class="conf-dot"></span>
+            <span id="confidence-text">—</span>
+          </span>
+          <span class="result-marks-tag">Marks: <strong id="entered-marks">—</strong></span>
+        </div>
+
+        <div class="result-divider"></div>
+
+        <div class="chart-block">
+          <div class="chart-label">Rank vs Marks curve</div>
+          <div class="chart-wrap">
+            <canvas id="rankChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Reference table -->
+      <div class="ref-section">
+        <div class="ref-title">Calibration Reference Points</div>
+        <div class="card" style="overflow:hidden">
+          <table class="ref-table">
+            <thead>
+              <tr>
+                <th>Marks</th>
+                <th>Est. Rank</th>
+                <th>Source</th>
+              </tr>
+            </thead>
+            <tbody id="ref-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT COLUMN -->
+    <div>
+      <div class="empty-state" id="empty-state">
+        <div class="empty-icon">
+          <svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><line x1="12" y1="12" x2="12" y2="16"/><line x1="10" y1="14" x2="14" y2="14"/></svg>
+        </div>
+        <div class="empty-title">Awaiting your marks</div>
+        <div class="empty-sub">Enter your expected marks and click Predict to see your estimated rank and eligible colleges.</div>
+      </div>
+
+      <div class="card colleges-card" id="colleges-card" style="overflow:hidden">
+        <div class="card-head">
+          <div>
+            <div class="card-head-title">Reachable Institutes</div>
+            <div class="card-head-sub">Based on Round 1 historical cutoffs (2022–2025)</div>
+          </div>
+          <span class="badge-pill" style="white-space:nowrap">Hardest First</span>
+        </div>
+        <div class="colleges-list" id="colleges-list"></div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- ── FOOTER ────────────────────────────────────────────────────── -->
+<footer>
+  <div class="footer-inner">
+    <p class="disclaimer">
+      <strong>Disclaimer:</strong> Predictions are based on WBJEE JELET <strong>Open Category (General)</strong> data from Round 1 (2022–2025). Actual 2026 ranks and seat allotments may vary based on candidate volume, paper difficulty, and WBJEEB updates.
+    </p>
+    <div class="copyright">JELET Predictor © 2026</div>
+  </div>
+</footer>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════
+   DATA
+═══════════════════════════════════════════════════════════════════ */
+
+/**
+ * Anchor points: marks (ascending) → expected rank
+ * Sources:
+ *   - Known data points from teacher reference (2025 estimates)
+ *   - Extended points derived from observed exponential trend
+ *
+ * NOTE: x = marks (ascending), y = rank (decreasing as marks rise)
+ */
+const ANCHORS = [
+  // Extended (estimated below reference floor)
+  { m: 10,   r: 8000,  type: 'estimated' },
+  { m: 15,   r: 3500,  type: 'estimated' },
+  { m: 18,   r: 1800,  type: 'estimated' },
+  // Known reference data
+  { m: 20,   r: 950,   type: 'known' },   // ~900–1000
+  { m: 22,   r: 550,   type: 'known' },   // 22+ → ~550
+  { m: 25,   r: 250,   type: 'known' },   // 25+ → ~250
+  { m: 29,   r: 100,   type: 'known' },   // 29  → ~100
+  { m: 30,   r: 70,    type: 'known' },   // 30–32 → ~70+
+  { m: 32,   r: 45,    type: 'known' },   // 32–35 → ~45
+  { m: 35,   r: 30,    type: 'known' },   // 35+ → ~30
+  { m: 40,   r: 6,     type: 'known' },   // 40+ → 6–7
+  // Extended (estimated above reference ceiling)
+  { m: 42,   r: 4,     type: 'estimated' },
+  { m: 45,   r: 2,     type: 'estimated' },
+  { m: 50,   r: 1,     type: 'estimated' },
+];
+
+const COLLEGE_DATA = [
+  ['Jadavpur University', 'B.Pharm', 5],
+  ['Jadavpur University', 'Chemical Engineering', 10],
+  ['Jadavpur University', 'Computer Science & Engineering', 23],
+  ['BC Roy College of Pharmacy', 'B.Pharm', 23],
+  ['Jadavpur University', 'Electronics & Telecommunication', 32],
+  ['Jadavpur University', 'Electrical Engineering', 37],
+  ['Jadavpur University', 'Civil Engineering', 46],
+  ['Jadavpur University', 'Mechanical Engineering', 58],
+  ['Kalyani Govt Engineering College', 'B.Pharm', 67],
+  ['University Institute of Technology Burdwan', 'Computer Science & Engineering', 96],
+  ['Jadavpur University', 'Metallurgical Engineering', 101],
+  ['Jadavpur University', 'Production Engineering', 116],
+  ['Jadavpur University', 'Power Engineering', 118],
+  ['Jadavpur University', 'Instrumentation & Electronics', 121],
+  ['Jadavpur University', 'Chemical Engineering', 145],
+  ['Jalpaiguri Govt Engineering College', 'B.Pharm', 168],
+  ['University of Kalyani', 'B.Pharm', 171],
+  ['Kalyani Govt Engineering College', 'Electronics & Communication', 185],
+  ['Kalyani Govt Engineering College', 'Electrical Engineering', 164],
+  ['Kalyani Govt Engineering College', 'Civil Engineering', 235],
+  ['Government College of Engineering & Leather Technology', 'Computer Science & Engineering', 255],
+  ['Government College of Engineering & Ceramic Technology', 'B.Pharm', 270],
+  ['Government College of Engineering & Leather Technology', 'Information Technology', 275],
+  ['Government College of Engineering & Leather Technology', 'Computer Science AI & ML', 300],
+  ['Cooch Behar Govt Engineering College', 'B.Pharm', 355],
+  ['Aliah University', 'Computer Science & Engineering', 380],
+  ['Ramkrishna Mahato Govt Engineering College', 'B.Pharm', 485],
+  ['MAKAUT', 'B.Pharm', 550],
+  ['Government College of Engineering & Textile Technology Serampore', 'B.Pharm', 665],
+  ['Alipurduar Govt Engineering College', 'Computer Science & Engineering', 685],
+  ['Ghani Khan Choudhury Institute', 'Computer Science & Engineering', 805],
+  ['Ghani Khan Choudhury Institute', 'Civil Engineering', 940],
+  ['IEM Salt Lake', 'B.Pharm', 1000],
+  ['Heritage Institute of Technology', 'B.Pharm', 1380],
+  ['Institute of Pharmacy, Jalpaiguri', 'B.Pharm', 1450],
+  ['Techno Main Salt Lake', 'Computer Science & Engineering', 1800],
+  ['Haldia Institute of Technology', 'Computer Science & Engineering', 1950],
+];
+
+/* ═══════════════════════════════════════════════════════════════════
+   MONOTONE CUBIC SPLINE (Fritsch–Carlson)
+   Ensures no oscillations; smooth & monotone between data points.
+═══════════════════════════════════════════════════════════════════ */
+function buildSpline(anchors) {
+  // Sort ascending by marks
+  const pts = [...anchors].sort((a, b) => a.m - b.m);
+  const n = pts.length;
+  const xs = pts.map(p => p.m);
+  const ys = pts.map(p => p.r);
+
+  // Secant slopes
+  const d = [];
+  for (let i = 0; i < n - 1; i++) {
+    d[i] = (ys[i + 1] - ys[i]) / (xs[i + 1] - xs[i]);
+  }
+
+  // Tangents: average of adjacent secants (Catmull-Rom start)
+  const m = new Array(n);
+  m[0] = d[0];
+  m[n - 1] = d[n - 2];
+  for (let i = 1; i < n - 1; i++) {
+    m[i] = (d[i - 1] + d[i]) / 2;
+  }
+
+  // Fritsch–Carlson monotone adjustment
+  for (let i = 0; i < n - 1; i++) {
+    if (Math.abs(d[i]) < 1e-12) {
+      m[i] = 0;
+      m[i + 1] = 0;
+    } else {
+      const a = m[i] / d[i];
+      const b = m[i + 1] / d[i];
+      const h = Math.hypot(a, b);
+      if (h > 3) {
+        const tau = 3 / h;
+        m[i] = tau * a * d[i];
+        m[i + 1] = tau * b * d[i];
+      }
+    }
+  }
+
+  return { xs, ys, m, n };
+}
+
+function evalSpline(spline, x) {
+  const { xs, ys, m, n } = spline;
+  if (x <= xs[0]) return ys[0];
+  if (x >= xs[n - 1]) return ys[n - 1];
+
+  // Binary search for interval
+  let lo = 0, hi = n - 1;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (xs[mid] <= x) lo = mid; else hi = mid;
+  }
+
+  const h = xs[hi] - xs[lo];
+  const t = (x - xs[lo]) / h;
+  const t2 = t * t, t3 = t2 * t;
+
+  // Hermite cubic basis
+  return (2 * t3 - 3 * t2 + 1) * ys[lo]
+       + (t3 - 2 * t2 + t) * h * m[lo]
+       + (-2 * t3 + 3 * t2) * ys[hi]
+       + (t3 - t2) * h * m[hi];
+}
+
+const SPLINE = buildSpline(ANCHORS);
+
+function getRank(marks) {
+  const raw = evalSpline(SPLINE, marks);
+  return Math.max(1, Math.round(raw));
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   CONFIDENCE
+   High  → within 1.5 marks of a known reference point
+   Medium → within 4 marks of a known reference point
+   Low   → extrapolation territory
+═══════════════════════════════════════════════════════════════════ */
+function getConfidence(marks) {
+  const known = ANCHORS.filter(p => p.type === 'known');
+  const minDist = Math.min(...known.map(p => Math.abs(p.m - marks)));
+  if (minDist <= 1.5) return { level: 'High',   cls: 'conf-high',   desc: 'High Confidence' };
+  if (minDist <= 4.0) return { level: 'Medium', cls: 'conf-medium', desc: 'Medium Confidence' };
+  return               { level: 'Low',    cls: 'conf-low',    desc: 'Low Confidence' };
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   RANK RANGE  (uncertainty widens at lower marks)
+═══════════════════════════════════════════════════════════════════ */
+function getRankRange(rank) {
+  let margin;
+  if (rank <= 10)   margin = 2;
+  else if (rank <= 50)  margin = 8;
+  else if (rank <= 150) margin = 20;
+  else if (rank <= 500) margin = 60;
+  else if (rank <= 1500) margin = 150;
+  else margin = 300;
+  return { lo: Math.max(1, rank - margin), hi: rank + margin };
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   ANIMATE VALUE
+═══════════════════════════════════════════════════════════════════ */
+function animateValue(el, from, to, duration) {
+  let start = null;
+  const step = ts => {
+    if (!start) start = ts;
+    const p = Math.min((ts - start) / duration, 1);
+    const ease = 1 - Math.pow(1 - p, 3);
+    el.textContent = Math.round(from + ease * (to - from));
+    if (p < 1) requestAnimationFrame(step);
+    else el.textContent = to;
+  };
+  requestAnimationFrame(step);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   CHART
+═══════════════════════════════════════════════════════════════════ */
+let chart = null;
+function updateChart(userMarks, userRank) {
+  const canvas = document.getElementById('rankChart');
+  const ctx = canvas.getContext('2d');
+
+  // Build curve data from 10 to 50 in fine steps
+  const curveX = [], curveY = [];
+  for (let m = 10; m <= 50; m += 0.5) {
+    curveX.push(m);
+    curveY.push(Math.max(1, getRank(m)));
+  }
+
+  const accent = getComputedStyle(document.documentElement)
+                   .getPropertyValue('--accent').trim() || '#4f46e5';
+  const muted  = getComputedStyle(document.documentElement)
+                   .getPropertyValue('--subtle').trim() || '#9ca9b8';
+  const gridC  = getComputedStyle(document.documentElement)
+                   .getPropertyValue('--border').trim() || '#e8edf4';
+
+  if (chart) chart.destroy();
+  chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: curveX,
+      datasets: [
+        {
+          label: 'Rank Curve',
+          data: curveY,
+          borderColor: accent,
+          backgroundColor: accent + '12',
+          borderWidth: 2,
+          pointRadius: 0,
+          tension: 0.35,
+          fill: true,
+        },
+        {
+          label: 'Your Position',
+          data: [{ x: userMarks, y: userRank }],
+          type: 'scatter',
+          backgroundColor: accent,
+          borderColor: '#fff',
+          borderWidth: 2,
+          pointRadius: 7,
+          pointHoverRadius: 9,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 600, easing: 'easeOutCubic' },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1e293b',
+          padding: 10,
+          cornerRadius: 8,
+          displayColors: false,
+          callbacks: {
+            label: ctx => `Marks: ${ctx.raw.x ?? ctx.label}  •  Rank: ${ctx.raw.y ?? ctx.parsed.y}`
+          }
+        }
+      },
+      scales: {
+        x: {
+          type: 'linear',
+          min: 10, max: 50,
+          title: { display: true, text: 'Marks (out of 120)', color: muted, font: { size: 10, weight: '600' } },
+          grid: { display: false },
+          border: { display: false },
+          ticks: { color: muted, font: { size: 10 }, maxTicksLimit: 9 }
+        },
+        y: {
+          type: 'logarithmic',
+          reverse: true,
+          grid: { color: gridC },
+          border: { display: false },
+          ticks: {
+            color: muted, font: { size: 10 },
+            callback: v => [1, 10, 50, 100, 500, 1000, 5000, 10000].includes(v) ? v : null
+          }
+        }
+      }
+    }
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   COLLEGES
+═══════════════════════════════════════════════════════════════════ */
+function renderColleges(rank) {
+  const list = document.getElementById('colleges-list');
+  list.innerHTML = '';
+
+  const eligible = COLLEGE_DATA
+    .filter(c => c[2] >= rank * 0.88)
+    .sort((a, b) => a[2] - b[2])
+    .slice(0, 22);
+
+  if (eligible.length === 0) {
+    list.innerHTML = `
+      <div class="colleges-empty">
+        <strong>No government/private matches found</strong>
+        Rank falls outside major cutoffs. Consider decentralised counselling.
+      </div>`;
+    return;
+  }
+
+  eligible.forEach(([name, branch, cutoff]) => {
+    const gap = cutoff - rank;
+    let chanceClass, chanceLabel;
+    if (gap >= 100)      { chanceClass = 'chance-safe';   chanceLabel = 'Safe'; }
+    else if (gap >= 25)  { chanceClass = 'chance-likely'; chanceLabel = 'Likely'; }
+    else                 { chanceClass = 'chance-border'; chanceLabel = 'Borderline'; }
+
+    const item = document.createElement('div');
+    item.className = 'college-item';
+    item.innerHTML = `
+      <div>
+        <div class="college-name">${name}</div>
+        <div class="college-branch">${branch}</div>
+        <span class="chance-chip ${chanceClass}">${chanceLabel}</span>
+      </div>
+      <div class="college-right">
+        <div class="cutoff-label">Cutoff</div>
+        <div class="cutoff-val">${cutoff}</div>
+      </div>`;
+    list.appendChild(item);
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   REFERENCE TABLE
+═══════════════════════════════════════════════════════════════════ */
+function buildRefTable() {
+  const tbody = document.getElementById('ref-table-body');
+  const displayPts = [
+    { m: 10, label: '10.0000', type: 'estimated' },
+    { m: 15, label: '15.0000', type: 'estimated' },
+    { m: 18, label: '18.0000', type: 'estimated' },
+    { m: 20, label: '20.0000', type: 'known' },
+    { m: 22, label: '22.0000', type: 'known' },
+    { m: 25, label: '25.0000', type: 'known' },
+    { m: 29, label: '29.0000', type: 'known' },
+    { m: 30, label: '30.0000', type: 'known' },
+    { m: 32, label: '32.0000', type: 'known' },
+    { m: 35, label: '35.0000', type: 'known' },
+    { m: 40, label: '40.0000', type: 'known' },
+    { m: 42, label: '42.0000', type: 'estimated' },
+    { m: 45, label: '45.0000', type: 'estimated' },
+  ];
+  displayPts.forEach(p => {
+    const r = getRank(p.m);
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="ref-marks">${p.label}</td>
+      <td class="ref-rank">${r.toLocaleString()}</td>
+      <td class="${p.type === 'known' ? 'ref-type-known' : 'ref-type-est'}">
+        ${p.type === 'known' ? '✓ Calibrated' : '~ Estimated'}
+      </td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   PREDICT (main entry point)
+═══════════════════════════════════════════════════════════════════ */
+function predict() {
+  const raw = document.getElementById('marks').value.trim();
+  const marks = parseFloat(parseFloat(raw).toFixed(4));
+
+  if (isNaN(marks) || marks < 0 || marks > 120) {
+    alert('Please enter a valid mark between 0 and 120.');
+    return;
+  }
+
+  const rank  = getRank(marks);
+  const range = getRankRange(rank);
+  const conf  = getConfidence(marks);
+
+  // Show result card
+  const rc = document.getElementById('result-card');
+  rc.classList.remove('visible');
+  void rc.offsetWidth; // force reflow
+  rc.classList.add('visible');
+
+  // Animate rank number
+  const rankEl = document.getElementById('rank-number');
+  animateValue(rankEl, 0, rank, 700);
+
+  // Range
+  document.getElementById('rank-range').innerHTML =
+    `Expected range: <strong>${range.lo.toLocaleString()} – ${range.hi.toLocaleString()}</strong>`;
+
+  // Confidence badge
+  const badge = document.getElementById('confidence-badge');
+  badge.className = `confidence-badge ${conf.cls}`;
+  document.getElementById('confidence-text').textContent = conf.desc;
+
+  // Entered marks
+  document.getElementById('entered-marks').textContent = parseFloat(raw).toFixed(4);
+
+  // Chart
+  updateChart(marks, rank);
+
+  // Colleges
+  document.getElementById('empty-state').classList.add('hidden');
+  const cc = document.getElementById('colleges-card');
+  cc.classList.remove('visible');
+  void cc.offsetWidth;
+  cc.classList.add('visible');
+  renderColleges(rank);
+
+  // Scroll on mobile
+  if (window.innerWidth < 768) {
+    rc.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   ENTER KEY
+═══════════════════════════════════════════════════════════════════ */
+document.getElementById('marks').addEventListener('keydown', e => {
+  if (e.key === 'Enter') predict();
+});
+
+/* ═══════════════════════════════════════════════════════════════════
+   DARK MODE
+═══════════════════════════════════════════════════════════════════ */
+function toggleTheme() {
+  const html = document.documentElement;
+  const next = html.dataset.theme === 'dark' ? 'light' : 'dark';
+  html.dataset.theme = next;
+  localStorage.setItem('jelet-theme', next);
+  // Redraw chart with updated colours
+  const marksEl = document.getElementById('marks');
+  if (marksEl.value && document.getElementById('result-card').classList.contains('visible')) {
+    const marks = parseFloat(parseFloat(marksEl.value).toFixed(4));
+    if (!isNaN(marks)) updateChart(marks, getRank(marks));
+  }
+}
+(function initTheme() {
+  const saved = localStorage.getItem('jelet-theme');
+  if (saved) document.documentElement.dataset.theme = saved;
+  else if (window.matchMedia('(prefers-color-scheme: dark)').matches)
+    document.documentElement.dataset.theme = 'dark';
+})();
+
+/* ═══════════════════════════════════════════════════════════════════
+   INIT
+═══════════════════════════════════════════════════════════════════ */
+buildRefTable();
+</script>
+</body>
+</html>
